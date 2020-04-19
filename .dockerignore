@@ -1,0 +1,5 @@
+./node_modules
+./elm_stuff
+.env
+__pycache__/
+./src/frontend

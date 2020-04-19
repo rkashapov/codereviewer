@@ -1,0 +1,10 @@
+.idea
+.vscode/
+node_modules
+elm-stuff
+__pycache__
+
+static/
+requirements.txt
+yarn-error.log
+./deploy.sh

@@ -400,6 +400,14 @@ startEditComment model sha lineno =
     case model.maybeViewer of
         Just viewer ->
             let
+                comparison =
+                    case model.editingComment of
+                        Just ( s, l, _ ) ->
+                            deleteComment model.comparison ( s, l )
+
+                        Nothing ->
+                            model.comparison
+
                 newComment =
                     ( sha
                     , lineno
@@ -418,7 +426,7 @@ startEditComment model sha lineno =
             in
             ( { model
                 | editingComment = Just newComment
-                , comparison = upsertComment model.comparison newComment
+                , comparison = upsertComment comparison newComment
               }
             , Cmd.none
             )

@@ -465,28 +465,33 @@ update msg model =
             startEditComment model sha lineno
 
 
-view : Model -> Document Msg
-view { title, maybeViewer, comparison } =
+viewHeader : Maybe Viewer -> Element Msg
+viewHeader maybeViewer =
     let
         avatar =
             case maybeViewer of
                 Just viewer ->
-                    el [ alignRight, paddingXY 22 0 ] <|
-                        viewAvatar (Maybe.withDefault "" viewer.avatarUrl) 20
+                    viewAvatar
+                        20
+                        [ alignRight, paddingXY 22 0 ]
+                        (Maybe.withDefault "" viewer.avatarUrl)
 
                 _ ->
                     el [] (text "")
+    in
+    row
+        [ height (px 64)
+        , width fill
+        , Element.Background.color (rgb255 14 16 18)
+        ]
+        [ viewLogo
+        , avatar
+        ]
 
-        header =
-            row
-                [ height (px 64)
-                , width fill
-                , Element.Background.color (rgb255 14 16 18)
-                ]
-                [ viewLogo
-                , avatar
-                ]
 
+view : Model -> Document Msg
+view { title, maybeViewer, comparison } =
+    let
         content =
             column
                 [ width (fill |> maximum 980)
@@ -522,7 +527,7 @@ view { title, maybeViewer, comparison } =
                 , spacingXY 0 16
                 ]
                 [ Element.html <| SyntaxHighlight.useTheme SyntaxHighlight.gitHub
-                , header
+                , Element.Lazy.lazy viewHeader maybeViewer
                 , content
                 ]
             )
@@ -530,17 +535,18 @@ view { title, maybeViewer, comparison } =
     }
 
 
-viewAvatar : String -> Int -> Element msg
-viewAvatar avatarUrl size =
-    image
-        [ height (px size)
-        , width (px size)
-        , Element.Border.rounded 3
-        , clip
-        ]
-        { src = avatarUrl
-        , description = "Avatar"
-        }
+viewAvatar : Int -> List (Element.Attribute Msg) -> String -> Element Msg
+viewAvatar size attributes avatarUrl =
+    el attributes <|
+        image
+            [ height (px size)
+            , width (px size)
+            , Element.Border.rounded 3
+            , clip
+            ]
+            { src = avatarUrl
+            , description = "Avatar"
+            }
 
 
 viewLogo =
@@ -571,22 +577,20 @@ viewComparison comparison =
             , paddingEach { edge | left = 10 }
             ]
           <|
-            List.map viewCommits comparison.commits
+            List.map (Element.Lazy.lazy viewCommit) comparison.commits
         ]
-        (List.map viewChangedFile comparison.changes)
+        (List.map (Element.Lazy.lazy viewChangedFile) comparison.changes)
 
 
-viewCommits : Data.Commit -> Element Msg
-viewCommits commit =
+viewCommit : Data.Commit -> Element Msg
+viewCommit commit =
     Element.row
         [ width fill
         , spacingXY 24 0
         ]
         [ row
-            [ spacingXY 8 0
-            , alignTop
-            ]
-            [ viewAvatar (Maybe.withDefault "" commit.author.avatarUrl) 20
+            [ alignTop ]
+            [ viewAvatar 20 [ paddingXY 8 0 ] (Maybe.withDefault "" commit.author.avatarUrl)
             , text commit.commit.author.name
             ]
         , Element.newTabLink
@@ -674,8 +678,7 @@ viewChangedFile diff =
         , Element.Background.color (rgb255 250 251 252)
         ]
     <|
-        Element.Lazy.lazy
-            (column [ width fill ])
+        column [ width fill ]
             [ Element.html <| SyntaxHighlight.useTheme SyntaxHighlight.gitHub
             , viewFileName diff
             , viewPatch diff.patch diff.sha syntax
@@ -718,28 +721,22 @@ type alias Syntax =
 
 viewPatch : List PatchLine -> String -> Syntax -> Element Msg
 viewPatch patchLines sha syntax =
-    Element.Keyed.column
-        [ width fill
-        , scrollbarX
-        ]
-    <|
+    Element.Keyed.column [ width fill, scrollbarX ] <|
         List.map (viewPatchLine syntax sha) patchLines
 
 
-viewPatchHeader : String -> Element.Element Msg
+viewPatchHeader : String -> Element Msg
 viewPatchHeader header =
-    Element.Lazy.lazy
-        (el
-            [ width fill
-            , height (px 28)
-            , Element.Font.size 12
-            , Element.Font.color (rgb255 90 96 100)
-            , paddingXY 10 7
-            , Element.Background.color (rgb255 241 248 255)
-            , borderColor
-            , Element.Border.widthEach { edge | bottom = 1, top = 1 }
-            ]
-        )
+    el
+        [ width fill
+        , height (px 28)
+        , Element.Font.size 12
+        , Element.Font.color (rgb255 90 96 100)
+        , paddingXY 10 7
+        , Element.Background.color (rgb255 241 248 255)
+        , borderColor
+        , Element.Border.widthEach { edge | bottom = 1, top = 1 }
+        ]
     <|
         text header
 
@@ -803,7 +800,7 @@ lineColor lineType =
             Element.Background.color (rgb255 255 255 255)
 
 
-viewCodeLine : Syntax -> LineOfCode -> String -> Element.Element Msg
+viewCodeLine : Syntax -> LineOfCode -> String -> Element Msg
 viewCodeLine syntax loc sha =
     let
         comments =
@@ -824,40 +821,28 @@ viewCodeLine syntax loc sha =
                             }
                         ]
                     <|
-                        List.map viewComment cmnts
-
-        key =
-            sha ++ String.fromInt loc.lineno
+                        List.map (Element.Lazy.lazy viewComment) cmnts
     in
-    Element.Lazy.lazy
-        (Element.Keyed.column
-            [ width fill ]
-        )
-        [ ( "code-" ++ key
-          , Element.Keyed.row
+    column [ width fill ]
+        [ row
+            [ width fill
+            , Element.Events.onClick <| StartEditComment sha loc.lineno
+            ]
+            [ Element.Lazy.lazy3 viewLineNumber
+                loc.lineType
+                loc.linenoBase
+                loc.linenoHead
+            , Element.el
                 [ width fill
-                , Element.Events.onClick <| StartEditComment sha loc.lineno
+                , pointer
+                , paddingXY 10 4
+                , linenoColor loc.lineType
+                , centerY
                 ]
-                [ ( "lineno-" ++ key
-                  , viewLineNumber
-                        loc.lineType
-                        loc.linenoBase
-                        loc.linenoHead
-                  )
-                , ( key
-                  , Element.el
-                        [ width fill
-                        , pointer
-                        , paddingXY 10 4
-                        , linenoColor loc.lineType
-                        , centerY
-                        ]
-                    <|
-                        Element.Lazy.lazy (highlight syntax) loc.code
-                  )
-                ]
-          )
-        , ( "comments-" ++ key, comments )
+              <|
+                Element.Lazy.lazy2 highlight syntax loc.code
+            ]
+        , comments
         ]
 
 
@@ -907,108 +892,111 @@ viewPatchLine : Syntax -> String -> PatchLine -> ( String, Element Msg )
 viewPatchLine syntax sha line =
     case line of
         Header _ header ->
-            ( sha, viewPatchHeader header )
+            ( sha ++ header, Element.Lazy.lazy viewPatchHeader header )
 
         Code loc ->
-            ( sha ++ String.fromInt loc.lineno, viewCodeLine syntax loc sha )
+            let
+                key =
+                    sha ++ "_" ++ String.fromInt loc.lineno ++ "_" ++ String.fromInt (List.length loc.comments)
+            in
+            ( key, Element.Lazy.lazy3 viewCodeLine syntax loc sha )
+
+
+viewCommentEditor : String -> Element Msg
+viewCommentEditor commentText =
+    column
+        [ width (fill |> maximum 780)
+        , spacingXY 0 10
+        , height fill
+        ]
+        [ Element.Input.multiline
+            [ height fill
+            , height (px 100)
+            , Element.Input.focusedOnLoad
+            ]
+            { onChange = EditComment
+            , text = commentText
+            , placeholder =
+                Just <|
+                    Element.Input.placeholder [] <|
+                        text "Leave a comment"
+            , label = Element.Input.labelHidden ""
+            , spellcheck = False
+            }
+        , row
+            [ alignRight
+            , spacingXY 10 0
+            ]
+            [ Element.Input.button
+                [ padding 10
+                , borderColor
+                , Element.Background.color (rgb255 242 244 247)
+                , Element.Border.width 1
+                , Element.Border.rounded 3
+                , Element.Border.color (rgb255 198 200 204)
+                , Element.Font.bold
+                , mouseOver
+                    [ Element.Background.color (rgb255 238 240 245)
+                    ]
+                ]
+                { onPress = Just CancelEdit
+                , label = text "Cancel"
+                }
+            , Element.Input.button
+                [ padding 10
+                , Element.Border.color (rgb255 198 200 204)
+                , Element.Font.bold
+                , Element.Background.color (rgb255 242 244 247)
+                , Element.Border.width 1
+                , Element.Border.rounded 3
+                , mouseOver
+                    [ Element.Background.color (rgb255 238 240 245)
+                    ]
+                ]
+                { onPress = Just AddComment
+                , label = text "Add single comment"
+                }
+            ]
+        ]
+
+
+viewDisplayedComment : Comment -> Element Msg
+viewDisplayedComment comment =
+    row
+        [ padding 16
+        , width (fill |> maximum 780)
+        ]
+        [ viewAvatar
+            28
+            [ paddingEach { edge | right = 20 }, alignTop ]
+            (Maybe.withDefault "" comment.author.avatarUrl)
+        , textColumn
+            [ spacingXY 0 10
+            , alignTop
+            ]
+            [ el
+                [ alignTop
+                , paddingEach { edge | bottom = 10 }
+                ]
+              <|
+                viewUserName (Maybe.withDefault "" comment.author.name)
+            , Element.Lazy.lazy renderCommentText comment.text
+            ]
+        ]
 
 
 viewComment : Comment -> Element Msg
 viewComment comment =
     case comment.state of
         Editing ->
-            Element.Keyed.column
-                [ width (fill |> maximum 780)
-                , spacingXY 0 10
-                , height fill
-                ]
-                [ ( "Editor"
-                  , Element.Input.multiline
-                        [ height fill
-                        , height (px 100)
-                        , Element.Input.focusedOnLoad
-                        ]
-                        { onChange = EditComment
-                        , text = comment.text
-                        , placeholder =
-                            Just <|
-                                Element.Input.placeholder [] <|
-                                    text "Leave a comment"
-                        , label = Element.Input.labelHidden ""
-                        , spellcheck = False
-                        }
-                  )
-                , ( "Editor Buttons"
-                  , row
-                        [ alignRight
-                        , spacingXY 10 0
-                        ]
-                        [ Element.Input.button
-                            [ padding 10
-                            , borderColor
-                            , Element.Background.color (rgb255 242 244 247)
-                            , Element.Border.width 1
-                            , Element.Border.rounded 3
-                            , Element.Border.color (rgb255 198 200 204)
-                            , Element.Font.bold
-                            , mouseOver
-                                [ Element.Background.color (rgb255 238 240 245)
-                                ]
-                            ]
-                            { onPress = Just CancelEdit
-                            , label = text "Cancel"
-                            }
-                        , Element.Input.button
-                            [ padding 10
-                            , Element.Border.color (rgb255 198 200 204)
-                            , Element.Font.bold
-                            , Element.Background.color (rgb255 242 244 247)
-                            , Element.Border.width 1
-                            , Element.Border.rounded 3
-                            , mouseOver
-                                [ Element.Background.color (rgb255 238 240 245)
-                                ]
-                            ]
-                            { onPress = Just AddComment
-                            , label = text "Add single comment"
-                            }
-                        ]
-                  )
-                ]
+            Element.Lazy.lazy viewCommentEditor comment.text
 
         Displayed ->
-            column
-                [ padding 16
-                , width (fill |> maximum 780)
-                ]
-            <|
-                [ row
-                    []
-                    [ el
-                        [ paddingEach { edge | right = 20 }, alignTop ]
-                      <|
-                        viewAvatar
-                            (Maybe.withDefault "" comment.author.avatarUrl)
-                            28
-                    , textColumn
-                        [ spacingXY 0 10
-                        , alignTop
-                        ]
-                        [ el
-                            [ alignTop
-                            , paddingEach { edge | bottom = 10 }
-                            ]
-                          <|
-                            viewLogin
-                                (Maybe.withDefault "" comment.author.name)
-                        , renderCommentText comment.text
-                        ]
-                    ]
-                ]
+            Element.Lazy.lazy viewDisplayedComment comment
 
 
-viewLogin : String -> Element msg
-viewLogin login =
+viewUserName : String -> Element msg
+viewUserName login =
     el [ Element.Font.bold ] <| text login
 
 

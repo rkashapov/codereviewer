@@ -123,11 +123,11 @@ class Repository(graphene.ObjectType):
                         ),
                     ),
                     author=User(
-                        id=commit['author']['id'],
+                        id=(commit['author'] or {}).get('id', ''),
                         name=commit['commit']['author']['name'],
                         email=commit['commit']['author']['email'],
-                        login=commit['author']['login'],
-                        avatar_url=commit['author']['avatar_url'],
+                        login=(commit['author'] or {}).get('login', ''),
+                        avatar_url=(commit['author'] or {}).get('avatar_url', ''),
                     ),
                 )
                 for commit in diff['commits']

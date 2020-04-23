@@ -474,7 +474,7 @@ viewHeader maybeViewer =
                     viewAvatar
                         20
                         [ alignRight, paddingXY 22 0 ]
-                        (Maybe.withDefault "" viewer.avatarUrl)
+                        viewer.avatarUrl
 
                 _ ->
                     el [] (text "")
@@ -535,8 +535,17 @@ view { title, maybeViewer, comparison } =
     }
 
 
-viewAvatar : Int -> List (Element.Attribute Msg) -> String -> Element Msg
-viewAvatar size attributes avatarUrl =
+viewAvatar : Int -> List (Element.Attribute Msg) -> Maybe String -> Element Msg
+viewAvatar size attributes maybeAvatarUrl =
+    let
+        src =
+            case maybeAvatarUrl of
+                Just avatarUrl ->
+                    avatarUrl
+
+                Nothing ->
+                    "https://camo.githubusercontent.com/01ba10fe0e5de848c55f5cc9d140cc97fcdfa4bf/68747470733a2f2f322e67726176617461722e636f6d2f6176617461722f64653639613830383235376237623734373935613934356162386361333238363f643d68747470732533412532462532466769746875622e6769746875626173736574732e636f6d253246696d6167657325324667726176617461727325324667726176617461722d757365722d3432302e706e6726723d6726733d3634"
+    in
     el attributes <|
         image
             [ height (px size)
@@ -544,7 +553,7 @@ viewAvatar size attributes avatarUrl =
             , Element.Border.rounded 3
             , clip
             ]
-            { src = avatarUrl
+            { src = src
             , description = "Avatar"
             }
 
@@ -590,7 +599,7 @@ viewCommit commit =
         ]
         [ row
             [ alignTop ]
-            [ viewAvatar 20 [ paddingXY 8 0 ] (Maybe.withDefault "" commit.author.avatarUrl)
+            [ viewAvatar 20 [ paddingXY 8 0 ] commit.author.avatarUrl
             , text commit.commit.author.name
             ]
         , Element.newTabLink
@@ -969,7 +978,7 @@ viewDisplayedComment comment =
         [ viewAvatar
             28
             [ paddingEach { edge | right = 20 }, alignTop ]
-            (Maybe.withDefault "" comment.author.avatarUrl)
+            comment.author.avatarUrl
         , textColumn
             [ spacingXY 0 10
             , alignTop

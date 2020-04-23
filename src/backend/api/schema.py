@@ -127,7 +127,7 @@ class Repository(graphene.ObjectType):
                         name=commit['commit']['author']['name'],
                         email=commit['commit']['author']['email'],
                         login=(commit['author'] or {}).get('login', ''),
-                        avatar_url=(commit['author'] or {}).get('avatar_url', ''),
+                        avatar_url=(commit['author'] or {}).get('avatar_url')
                     ),
                 )
                 for commit in diff['commits']

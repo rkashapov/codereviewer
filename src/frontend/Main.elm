@@ -493,7 +493,7 @@ view : Model -> Document Msg
 view { title, maybeViewer, comparison } =
     let
         content =
-            column
+            Element.Keyed.column
                 [ width (fill |> maximum 980)
                 , centerX
                 , spacingXY 0 20
@@ -570,25 +570,29 @@ viewLogo =
         text "Code Reviewer"
 
 
-viewComparison : Comparison -> List (Element Msg)
+viewComparison : Comparison -> List ( String, Element Msg )
 viewComparison comparison =
     List.append
-        [ Element.el
-            [ Element.Font.size 16
-            , Element.Font.semiBold
-            ]
-          <|
-            text "Commits"
-        , Element.column
-            [ Element.Border.widthEach { edge | left = 3 }
-            , borderColor
-            , spacingXY 0 16
-            , paddingEach { edge | left = 10 }
-            ]
-          <|
-            List.map (Element.Lazy.lazy viewCommit) comparison.commits
+        [ ( "commits-header"
+          , Element.el
+                [ Element.Font.size 16
+                , Element.Font.semiBold
+                ]
+            <|
+                text "Commits"
+          )
+        , ( "commits"
+          , Element.column
+                [ Element.Border.widthEach { edge | left = 3 }
+                , borderColor
+                , spacingXY 0 16
+                , paddingEach { edge | left = 10 }
+                ]
+            <|
+                List.map (Element.Lazy.lazy viewCommit) comparison.commits
+          )
         ]
-        (List.map (Element.Lazy.lazy viewChangedFile) comparison.changes)
+        (List.map viewChangedFile comparison.changes)
 
 
 viewCommit : Data.Commit -> Element Msg
@@ -671,13 +675,14 @@ lineOfCode before after line =
         }
 
 
-viewChangedFile : Diff -> Element Msg
+viewChangedFile : Diff -> ( String, Element Msg )
 viewChangedFile diff =
     let
         syntax =
             highlighter diff.filename
     in
-    el
+    ( diff.filename
+    , el
         [ Element.Border.solid
         , borderColor
         , Element.Border.width 1
@@ -686,12 +691,13 @@ viewChangedFile diff =
         , height fill
         , Element.Background.color (rgb255 250 251 252)
         ]
-    <|
-        column [ width fill ]
-            [ Element.html <| SyntaxHighlight.useTheme SyntaxHighlight.gitHub
-            , viewFileName diff
-            , viewPatch diff.patch diff.sha syntax
+      <|
+        Element.Keyed.column [ width fill ]
+            [ ( diff.filename ++ "_style", Element.Lazy.lazy Element.html <| SyntaxHighlight.useTheme SyntaxHighlight.gitHub )
+            , ( diff.filename ++ "_name", Element.Lazy.lazy viewFileName diff )
+            , ( diff.filename ++ "_patch", Element.Lazy.lazy3 viewPatch diff.patch diff.sha syntax )
             ]
+    )
 
 
 viewFileName : Diff -> Element msg
@@ -731,7 +737,8 @@ type alias Syntax =
 viewPatch : List PatchLine -> String -> Syntax -> Element Msg
 viewPatch patchLines sha syntax =
     Element.Keyed.column [ width fill, scrollbarX ] <|
-        List.map (viewPatchLine syntax sha) patchLines
+        List.concat <|
+            List.map (viewPatchLine syntax sha) patchLines
 
 
 viewPatchHeader : String -> Element Msg
@@ -750,7 +757,7 @@ viewPatchHeader header =
         text header
 
 
-viewLineNumber lineType linenoBase linenoHead =
+viewLineNumber linenoBase linenoHead lineType =
     let
         numbers =
             case lineType of
@@ -809,50 +816,54 @@ lineColor lineType =
             Element.Background.color (rgb255 255 255 255)
 
 
-viewCodeLine : Syntax -> LineOfCode -> String -> Element Msg
-viewCodeLine syntax loc sha =
-    let
-        comments =
-            case loc.comments of
-                [] ->
-                    none
+viewComments loc =
+    case loc.comments of
+        [] ->
+            none
 
-                cmnts ->
-                    column
-                        [ width fill
-                        , padding 10
-                        , borderColor
-                        , Element.Background.color (rgb255 255 255 255)
-                        , Element.Border.widthEach
-                            { edge
-                                | top = 1
-                                , bottom = 1
-                            }
-                        ]
-                    <|
-                        List.map (Element.Lazy.lazy viewComment) cmnts
-    in
-    column [ width fill ]
-        [ row
+        cmnts ->
+            column
+                [ width fill
+                , padding 10
+                , borderColor
+                , Element.Background.color (rgb255 255 255 255)
+                , Element.Border.widthEach
+                    { edge
+                        | top = 1
+                        , bottom = 1
+                    }
+                ]
+            <|
+                List.map (Element.Lazy.lazy viewComment) cmnts
+
+
+viewCode syntax lineType code =
+    Element.el
+        [ width fill
+        , pointer
+        , paddingXY 10 4
+        , linenoColor lineType
+        , centerY
+        ]
+    <|
+        Element.Lazy.lazy2 highlight syntax code
+
+
+viewCodeLine : Syntax -> LineOfCode -> String -> List ( String, Element Msg )
+viewCodeLine syntax loc sha =
+    [ ( sha ++ String.fromInt loc.lineno
+      , row
             [ width fill
             , Element.Events.onClick <| StartEditComment sha loc.lineno
             ]
-            [ Element.Lazy.lazy3 viewLineNumber
-                loc.lineType
-                loc.linenoBase
-                loc.linenoHead
-            , Element.el
-                [ width fill
-                , pointer
-                , paddingXY 10 4
-                , linenoColor loc.lineType
-                , centerY
-                ]
-              <|
-                Element.Lazy.lazy2 highlight syntax loc.code
+            [ viewLineNumber loc.linenoBase loc.linenoHead loc.lineType
+            , viewCode syntax loc.lineType loc.code
             ]
-        , comments
-        ]
+      )
+    , ( sha ++ String.fromInt loc.lineno ++ "_comments"
+      , Element.Lazy.lazy viewComments loc
+      )
+    ]
 
 
 highlighter : String -> Syntax
@@ -897,18 +908,14 @@ highlight syntax code =
             ]
 
 
-viewPatchLine : Syntax -> String -> PatchLine -> ( String, Element Msg )
+viewPatchLine : Syntax -> String -> PatchLine -> List ( String, Element Msg )
 viewPatchLine syntax sha line =
     case line of
         Header _ header ->
-            ( sha ++ header, Element.Lazy.lazy viewPatchHeader header )
+            [ ( sha ++ header, Element.Lazy.lazy viewPatchHeader header ) ]
 
         Code loc ->
-            let
-                key =
-                    sha ++ "_" ++ String.fromInt loc.lineno ++ "_" ++ String.fromInt (List.length loc.comments)
-            in
-            ( key, Element.Lazy.lazy3 viewCodeLine syntax loc sha )
+            viewCodeLine syntax loc sha
 
 
 viewCommentEditor : String -> Element Msg

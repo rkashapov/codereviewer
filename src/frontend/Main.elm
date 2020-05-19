@@ -1,6 +1,7 @@
 module Main exposing (..)
 
 import Browser exposing (Document, UrlRequest, application)
+import Browser.Events
 import Browser.Navigation exposing (Key)
 import Data exposing (Viewer)
 import Element exposing (..)
@@ -36,6 +37,7 @@ main =
 
 type alias Model =
     { title : String
+    , device : Device
     , maybeViewer : Maybe Viewer
     , comparison : Comparison
     , editingComment : Maybe ( String, Int, List Comment )
@@ -45,7 +47,10 @@ type alias Model =
 
 
 type alias Flags =
-    String
+    { apiUrl : String
+    , width : Int
+    , height : Int
+    }
 
 
 type alias ParseResult =
@@ -61,6 +66,7 @@ type Msg
     | EditComment String
     | CancelEdit
     | StartEditComment String Int
+    | Resized Int Int
 
 
 type CommentState
@@ -213,9 +219,9 @@ parsePatchLine line before after =
         Just (Code <| lineOfCode before after line)
 
 
-subscriptions : Model -> Sub msg
+subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    Browser.Events.onResize (\w h -> Resized w h)
 
 
 onUrlRequest : UrlRequest -> msg
@@ -273,10 +279,10 @@ initLoading maybeResult apiUrl =
 
 
 init : Flags -> Url -> Key -> ( Model, Cmd Msg )
-init apiUrl location navigationKey =
+init flags location navigationKey =
     let
         command =
-            case initLoading (parse parser location) apiUrl of
+            case initLoading (parse parser location) flags.apiUrl of
                 Just cmd ->
                     cmd
 
@@ -287,8 +293,9 @@ init apiUrl location navigationKey =
       , maybeViewer = Nothing
       , comparison = { changes = [], commits = [] }
       , editingComment = Nothing
-      , apiUrl = apiUrl
+      , apiUrl = flags.apiUrl
       , navigationKey = navigationKey
+      , device = classifyDevice { width = flags.width, height = flags.height }
       }
     , command
     )
@@ -464,6 +471,11 @@ update msg model =
         StartEditComment sha lineno ->
             startEditComment model sha lineno
 
+        Resized width height ->
+            ( { model | device = classifyDevice { width = width, height = height } }
+            , Cmd.none
+            )
+
 
 viewHeader : Maybe Viewer -> Element Msg
 viewHeader maybeViewer =
@@ -490,7 +502,7 @@ viewHeader maybeViewer =
 
 
 view : Model -> Document Msg
-view { title, maybeViewer, comparison } =
+view { device, title, maybeViewer, comparison } =
     let
         content =
             Element.Keyed.column
@@ -509,7 +521,7 @@ view { title, maybeViewer, comparison } =
                     ]
                 ]
             <|
-                viewComparison comparison
+                viewComparison device comparison
     in
     { title = title
     , body =
@@ -570,8 +582,8 @@ viewLogo =
         text "Code Reviewer"
 
 
-viewComparison : Comparison -> List ( String, Element Msg )
-viewComparison comparison =
+viewComparison : Device -> Comparison -> List ( String, Element Msg )
+viewComparison device comparison =
     List.append
         [ ( "commits-header"
           , Element.el
@@ -592,7 +604,7 @@ viewComparison comparison =
                 List.map (Element.Lazy.lazy viewCommit) comparison.commits
           )
         ]
-        (List.map viewChangedFile comparison.changes)
+        (List.map (viewChangedFile device) comparison.changes)
 
 
 viewCommit : Data.Commit -> Element Msg
@@ -675,8 +687,8 @@ lineOfCode before after line =
         }
 
 
-viewChangedFile : Diff -> ( String, Element Msg )
-viewChangedFile diff =
+viewChangedFile : Device -> Diff -> ( String, Element Msg )
+viewChangedFile device diff =
     let
         syntax =
             highlighter diff.filename
@@ -695,7 +707,7 @@ viewChangedFile diff =
         Element.Keyed.column [ width fill ]
             [ ( diff.filename ++ "_style", Element.Lazy.lazy Element.html <| SyntaxHighlight.useTheme SyntaxHighlight.gitHub )
             , ( diff.filename ++ "_name", Element.Lazy.lazy viewFileName diff )
-            , ( diff.filename ++ "_patch", Element.Lazy.lazy3 viewPatch diff.patch diff.sha syntax )
+            , ( diff.filename ++ "_patch", Element.Lazy.lazy4 viewPatch device diff.patch diff.sha syntax )
             ]
     )
 
@@ -734,11 +746,11 @@ type alias Syntax =
     String -> Result (List TextParser.DeadEnd) SyntaxHighlight.HCode
 
 
-viewPatch : List PatchLine -> String -> Syntax -> Element Msg
-viewPatch patchLines sha syntax =
+viewPatch : Device -> List PatchLine -> String -> Syntax -> Element Msg
+viewPatch device patchLines sha syntax =
     Element.Keyed.column [ width fill, scrollbarX ] <|
         List.concat <|
-            List.map (viewPatchLine syntax sha) patchLines
+            List.map (viewPatchLine device syntax sha) patchLines
 
 
 viewPatchHeader : String -> Element Msg
@@ -758,38 +770,32 @@ viewPatchHeader header =
 
 
 viewLineNumber linenoBase linenoHead lineType =
-    let
-        numbers =
-            case lineType of
-                Added ->
-                    [ el numberStyle (text "")
-                    , el numberStyle (text <| String.fromInt linenoHead)
-                    ]
+    case lineType of
+        Added ->
+            [ viewLineNumber_ lineType none
+            , viewLineNumber_ lineType (text <| String.fromInt linenoHead)
+            ]
 
-                Deleted ->
-                    [ el numberStyle (text <| String.fromInt linenoBase)
-                    , el numberStyle (text "")
-                    ]
+        Deleted ->
+            [ viewLineNumber_ lineType (text <| String.fromInt linenoBase)
+            , viewLineNumber_ lineType none
+            ]
 
-                Untouched ->
-                    [ el numberStyle (text <| String.fromInt linenoBase)
-                    , el numberStyle (text <| String.fromInt linenoHead)
-                    ]
-    in
-    row
-        [ width (px 100)
+        Untouched ->
+            [ viewLineNumber_ lineType (text <| String.fromInt linenoBase)
+            , viewLineNumber_ lineType (text <| String.fromInt linenoHead)
+            ]
+
+
+viewLineNumber_ lineType =
+    el
+        [ width (px 50)
+        , height fill
+        , paddingXY 10 4
         , lineColor lineType
-        , pointer
+        , Element.Font.color (rgb255 186 187 188)
+        , mouseOver [ Element.Font.color (rgb255 90 96 100) ]
         ]
-        numbers
-
-
-numberStyle =
-    [ width (px 50)
-    , paddingXY 10 4
-    , Element.Font.color (rgb255 186 187 188)
-    , mouseOver [ Element.Font.color (rgb255 90 96 100) ]
-    ]
 
 
 linenoColor lineType =
@@ -840,25 +846,35 @@ viewComments loc =
 viewCode syntax lineType code =
     Element.el
         [ width fill
-        , pointer
         , paddingXY 10 4
         , linenoColor lineType
-        , centerY
         ]
     <|
         Element.Lazy.lazy2 highlight syntax code
 
 
-viewCodeLine : Syntax -> LineOfCode -> String -> List ( String, Element Msg )
-viewCodeLine syntax loc sha =
+viewCodeLine : Device -> Syntax -> LineOfCode -> String -> List ( String, Element Msg )
+viewCodeLine device syntax loc sha =
+    let
+        linenoView =
+            case device.class of
+                Phone ->
+                    [ none ]
+
+                _ ->
+                    viewLineNumber loc.linenoBase loc.linenoHead loc.lineType
+    in
     [ ( sha ++ String.fromInt loc.lineno
       , row
             [ width fill
+            , pointer
+            , centerY
             , Element.Events.onClick <| StartEditComment sha loc.lineno
             ]
-            [ viewLineNumber loc.linenoBase loc.linenoHead loc.lineType
-            , viewCode syntax loc.lineType loc.code
-            ]
+        <|
+            List.append
+                linenoView
+                [ viewCode syntax loc.lineType loc.code ]
       )
     , ( sha ++ String.fromInt loc.lineno ++ "_comments"
       , Element.Lazy.lazy viewComments loc
@@ -908,14 +924,14 @@ highlight syntax code =
             ]
 
 
-viewPatchLine : Syntax -> String -> PatchLine -> List ( String, Element Msg )
-viewPatchLine syntax sha line =
+viewPatchLine : Device -> Syntax -> String -> PatchLine -> List ( String, Element Msg )
+viewPatchLine device syntax sha line =
     case line of
         Header _ header ->
             [ ( sha ++ header, Element.Lazy.lazy viewPatchHeader header ) ]
 
         Code loc ->
-            viewCodeLine syntax loc sha
+            viewCodeLine device syntax loc sha
 
 
 viewCommentEditor : String -> Element Msg

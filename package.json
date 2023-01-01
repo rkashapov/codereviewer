@@ -16,10 +16,10 @@
   },
   "devDependencies": {
     "elm-format": "0.8.3",
-    "elm-webpack-loader": "6.0.1",
+    "elm-webpack-loader": "8.0.0",
     "npx": "10.2.2",
-    "webpack-cli": "3.3.11",
-    "webpack": "4.42.1",
+    "webpack-cli": "5.0.1",
+    "webpack": "5.75.0",
     "compression-webpack-plugin": "3.1.0"
   }
 }
